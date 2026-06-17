@@ -1,0 +1,95 @@
+{
+  "users": [
+    {
+      "id": 1,
+      "username": "admin",
+      "password": "$2b$08$aP2OJeMH9XL7h6ssHxDRAuFjfitSg/LARh1o/DcMpi.basCiZKqhe",
+      "role": "admin",
+      "name": "Admin",
+      "email": "admin@kimathi.co.ke",
+      "phone": "+254700000000"
+    }
+  ],
+  "customers": [],
+  "quotes": [],
+  "payments": [],
+  "transactions": [],
+  "accounts": [],
+  "fiscal_years": [],
+  "metal_prices": [
+    {
+      "id": 1,
+      "name": "Steel",
+      "buy_price_per_kg": 15,
+      "sell_price_per_kg": 25,
+      "unit": "kg",
+      "is_active": true
+    },
+    {
+      "id": 2,
+      "name": "Copper",
+      "buy_price_per_kg": 450,
+      "sell_price_per_kg": 520,
+      "unit": "kg",
+      "is_active": true
+    },
+    {
+      "id": 3,
+      "name": "Aluminium",
+      "buy_price_per_kg": 120,
+      "sell_price_per_kg": 160,
+      "unit": "kg",
+      "is_active": true
+    },
+    {
+      "id": 4,
+      "name": "Brass",
+      "buy_price_per_kg": 200,
+      "sell_price_per_kg": 260,
+      "unit": "kg",
+      "is_active": true
+    },
+    {
+      "id": 5,
+      "name": "Cast Iron",
+      "buy_price_per_kg": 10,
+      "sell_price_per_kg": 18,
+      "unit": "kg",
+      "is_active": true
+    },
+    {
+      "id": 6,
+      "name": "Stainless Steel",
+      "buy_price_per_kg": 50,
+      "sell_price_per_kg": 80,
+      "unit": "kg",
+      "is_active": true
+    },
+    {
+      "id": 7,
+      "name": "Lead",
+      "buy_price_per_kg": 80,
+      "sell_price_per_kg": 120,
+      "unit": "kg",
+      "is_active": true
+    },
+    {
+      "id": 8,
+      "name": "Battery",
+      "buy_price_per_kg": 30,
+      "sell_price_per_kg": 55,
+      "unit": "kg",
+      "is_active": true
+    },
+    {
+      "id": 9,
+      "name": "Mixed Metal",
+      "buy_price_per_kg": 5,
+      "sell_price_per_kg": 12,
+      "unit": "kg",
+      "is_active": true
+    }
+  ],
+  "scrap_purchases": [],
+  "services": []
+}
