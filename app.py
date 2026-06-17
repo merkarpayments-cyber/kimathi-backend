@@ -41,6 +41,33 @@ DATA = {
     "services": [],
 }
 
+# Common transaction categories for dropdown picker
+TRANSACTION_CATEGORIES = {
+    "income": [
+        "Scrap Metal Sale",
+        "Equipment Sale",
+        "Service Fee",
+        "Deposit",
+        "Loan Repayment",
+        "Other Income",
+    ],
+    "expense": [
+        "Transport",
+        "Fuel",
+        "Equipment Purchase",
+        "Maintenance",
+        "Utilities",
+        "Rent",
+        "Salaries",
+        "Licenses & Permits",
+        "Office Supplies",
+        "Advertising",
+        "Insurance",
+        "Bank Charges",
+        "Other Expense",
+    ],
+}
+
 # ---------------------------------------------------------------------------
 # Persistence helpers
 # ---------------------------------------------------------------------------
@@ -253,8 +280,62 @@ _register_crud("quotes", "quotes",
     ["customer_id", "customer_name", "items", "total", "status", "notes"])
 _register_crud("payments", "payments",
     ["customer_id", "customer_name", "amount", "method", "reference", "notes", "type"])
-_register_crud("transactions", "transactions",
-    ["type", "category", "amount", "description", "date", "payment_method", "reference"])
+# Transactions — custom handler with date + payment_method + category filtering
+# ---------------------------------------------------------------------------
+@app.route("/api/transactions", methods=["GET"], endpoint="list_transactions")
+@require_auth
+def list_transactions():
+    items = DATA.get("transactions", [])
+    # Filter by date (supports partial match: "2026-06" or full "2026-06-15")
+    date_q = request.args.get("date", "").strip()
+    if date_q:
+        items = [i for i in items if date_q in str(i.get("date", ""))]
+    # Filter by payment_method (exact, case-insensitive)
+    pm_q = request.args.get("payment_method", "").strip()
+    if pm_q:
+        items = [i for i in items if pm_q.lower() in str(i.get("payment_method", "")).lower()]
+    # Filter by category (type of work / item bought-sold)
+    cat_q = request.args.get("category", "").strip()
+    if cat_q:
+        items = [i for i in items if cat_q.lower() in str(i.get("category", "")).lower()]
+    # Text search across description + reference
+    q = request.args.get("search", "").strip().lower()
+    if q:
+        items = [i for i in items if
+                 q in str(i.get("description", "")).lower() or
+                 q in str(i.get("reference", "")).lower()]
+    return jsonify(sorted(items, key=lambda x: x.get("id", 0), reverse=True))
+
+
+@app.route("/api/transactions/<int:item_id>", methods=["GET"], endpoint="get_transaction")
+@require_auth
+def get_transaction(item_id):
+    for i in DATA.get("transactions", []):
+        if i["id"] == item_id:
+            return jsonify(i)
+    return jsonify({"error": "Not found"}), 404
+
+
+@app.route("/api/transactions", methods=["POST"], endpoint="create_transaction")
+@require_auth
+def create_transaction():
+    body = request.get_json(force=True)
+    fields = ["type", "category", "amount", "description", "date", "payment_method", "reference"]
+    data = {k: body[k] for k in fields if k in body}
+    data["id"] = _next_id("transactions")
+    data.setdefault("created_at", datetime.now().isoformat())
+    DATA.setdefault("transactions", []).append(data)
+    _save()
+    return jsonify(data), 201
+
+
+@app.route("/api/transaction-categories", methods=["GET"], endpoint="transaction_categories")
+@require_auth
+def transaction_categories():
+    """Return common transaction categories for frontend dropdown."""
+    return jsonify(TRANSACTION_CATEGORIES)
+
+
 _register_crud("accounts", "accounts",
     ["name", "type", "balance", "currency", "notes"])
 _register_crud("fiscal_years", "fiscal_years",
@@ -282,6 +363,39 @@ def _seed():
             "email": "admin@kimathi.co.ke",
             "phone": "+254700000000",
         })
+        DATA["transactions"].extend([
+            # M-Pesa transactions with work/item descriptions
+            {"id": 1, "type": "income", "category": "Scrap Metal Sale", "amount": 45000,
+             "description": "Sold 300kg steel scrap to Associated Steel Mill", "date": "2026-06-10",
+             "payment_method": "M-Pesa", "reference": "MPESA-REF-A001"},
+            {"id": 2, "type": "income", "category": "Scrap Metal Sale", "amount": 78000,
+             "description": "Sold 150kg copper scrap to Kenya Metal Refiners", "date": "2026-06-11",
+             "payment_method": "M-Pesa", "reference": "MPESA-REF-A002"},
+            {"id": 3, "type": "expense", "category": "Transport", "amount": 8500,
+             "description": "Haulage fee — pickup & delivery of 2-ton scrap load", "date": "2026-06-12",
+             "payment_method": "M-Pesa", "reference": "MPESA-REF-B001"},
+            {"id": 4, "type": "expense", "category": "Equipment Purchase", "amount": 32000,
+             "description": "Bought hydraulic scrap shear (second-hand, Nakuru)", "date": "2026-06-13",
+             "payment_method": "M-Pesa", "reference": "MPESA-REF-B002"},
+            {"id": 5, "type": "income", "category": "Scrap Metal Sale", "amount": 22500,
+             "description": "Sold 180kg aluminium scrap to East African Foundries", "date": "2026-06-14",
+             "payment_method": "Cash", "reference": "CASH-001"},
+            {"id": 6, "type": "income", "category": "Scrap Metal Sale", "amount": 12500,
+             "description": "Sold 60kg brass scrap — walk-in customer", "date": "2026-06-15",
+             "payment_method": "M-Pesa", "reference": "MPESA-REF-A003"},
+            {"id": 7, "type": "expense", "category": "Utilities", "amount": 3400,
+             "description": "Power bill — Kenya Power (yard operations)", "date": "2026-06-15",
+             "payment_method": "M-Pesa", "reference": "MPESA-REF-B003"},
+            {"id": 8, "type": "expense", "category": "Fuel", "amount": 6200,
+             "description": "Diesel for loader machine (200L)", "date": "2026-06-16",
+             "payment_method": "M-Pesa", "reference": "MPESA-REF-B004"},
+            {"id": 9, "type": "income", "category": "Scrap Metal Sale", "amount": 95000,
+             "description": "Bulk steel scrap order — Devki Steel Mill contract", "date": "2026-06-17",
+             "payment_method": "Bank Transfer", "reference": "BANK-TFR-001"},
+            {"id": 10, "type": "expense", "category": "Maintenance", "amount": 15000,
+             "description": "Hydraulic press repair — replacement of seals & hoses", "date": "2026-06-17",
+             "payment_method": "M-Pesa", "reference": "MPESA-REF-B005"},
+        ])
         DATA["metal_prices"].extend([
             {"id": 1, "name": "Steel", "buy_price_per_kg": 15, "sell_price_per_kg": 25, "unit": "kg", "is_active": True},
             {"id": 2, "name": "Copper", "buy_price_per_kg": 450, "sell_price_per_kg": 520, "unit": "kg", "is_active": True},
@@ -308,4 +422,4 @@ if __name__ == "__main__":
     print(f"  Listening on http://0.0.0.0:{port}")
     print(f"  Login: admin / admin123")
     print()
-    app.run(host="0.0.0.0", port=port, debug=True)
+    app.run(host="0.0.0.0", port=port, debug=False)
