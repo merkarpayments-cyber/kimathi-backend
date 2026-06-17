@@ -301,10 +301,11 @@ def _seed():
 # Startup
 # ===========================================================================
 if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
     print("Kimathi Engineering Backend")
     print("=" * 40)
     _seed()
-    print(f"  Listening on http://0.0.0.0:5000")
+    print(f"  Listening on http://0.0.0.0:{port}")
     print(f"  Login: admin / admin123")
     print()
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host="0.0.0.0", port=port, debug=True)
