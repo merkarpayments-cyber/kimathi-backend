@@ -429,6 +429,30 @@ def _seed():
 
 
 # ===========================================================================
+# Reset — force re-seed (useful for Render cold starts)
+# ===========================================================================
+@app.route("/api/reset", methods=["POST"])
+def reset_db():
+    """Delete the database and re-seed. Returns new admin credentials."""
+    import os as _os
+    if _os.path.exists(DB_PATH):
+        _os.remove(DB_PATH)
+    # Clear in-memory data
+    for key in DATA:
+        if key != "metal_prices":  # metal_prices has defaults below
+            DATA[key] = []
+    DATA["metal_prices"] = []
+    _seed()
+    return jsonify({
+        "message": "Database reset and re-seeded",
+        "login": {"username": "admin", "password": "admin123"},
+        "users_count": len(DATA["users"]),
+        "transactions_count": len(DATA["transactions"]),
+        "metal_prices_count": len(DATA["metal_prices"]),
+    })
+
+
+# ===========================================================================
 # Startup  — seed runs here so gunicorn picks it up (__name__ != "__main__")
 # ===========================================================================
 _seed()
