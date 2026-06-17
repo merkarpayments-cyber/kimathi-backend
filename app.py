@@ -429,13 +429,14 @@ def _seed():
 
 
 # ===========================================================================
-# Startup
+# Startup  — seed runs here so gunicorn picks it up (__name__ != "__main__")
 # ===========================================================================
+_seed()
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     print("Kimathi Engineering Backend")
     print("=" * 40)
-    _seed()
     print(f"  Listening on http://0.0.0.0:{port}")
     print(f"  Login: admin / admin123")
     print()
