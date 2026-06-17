@@ -39,6 +39,11 @@ DATA = {
     "metal_prices": [],
     "scrap_purchases": [],
     "services": [],
+    "suppliers": [],
+    "inventory": [],
+    "stock_movements": [],
+    "scale_readings": [],
+    "invoices": [],
 }
 
 # Common transaction categories for dropdown picker
@@ -430,6 +435,282 @@ def _seed():
         ])
         _save()
         print("  → Seeded admin user + 9 metal prices")
+
+
+# ===========================================================================
+# Inventory / Stock Management
+# ===========================================================================
+@app.route("/api/inventory", methods=["GET"], endpoint="list_inventory")
+@require_auth
+def list_inventory():
+    items = DATA.get("inventory", [])
+    # Filter by metal_type
+    mt = request.args.get("metal_type", "").strip()
+    if mt:
+        items = [i for i in items if mt.lower() in i.get("metal_type", "").lower()]
+    # Search
+    q = request.args.get("search", "").strip().lower()
+    if q:
+        items = [i for i in items if q in str(i.get("metal_type", "")).lower() or q in str(i.get("notes", "")).lower()]
+    return jsonify(sorted(items, key=lambda x: x.get("id", 0), reverse=True))
+
+
+@app.route("/api/inventory/<int:item_id>", methods=["GET"], endpoint="get_inventory")
+@require_auth
+def get_inventory(item_id):
+    for i in DATA.get("inventory", []):
+        if i["id"] == item_id:
+            return jsonify(i)
+    return jsonify({"error": "Not found"}), 404
+
+
+@app.route("/api/inventory", methods=["POST"], endpoint="create_inventory")
+@require_auth
+def create_inventory():
+    body = request.get_json(force=True)
+    fields = ["metal_type", "weight_kg", "location", "buy_price_per_kg", "notes"]
+    data = {k: body[k] for k in fields if k in body}
+    data["id"] = _next_id("inventory")
+    data.setdefault("weight_kg", 0)
+    data.setdefault("location", "Main Yard")
+    data["created_at"] = datetime.now().isoformat()
+    DATA.setdefault("inventory", []).append(data)
+    _save()
+    return jsonify(data), 201
+
+
+@app.route("/api/inventory/summary", methods=["GET"], endpoint="inventory_summary")
+@require_auth
+def inventory_summary():
+    items = DATA.get("inventory", [])
+    summary = {}
+    for item in items:
+        mt = item.get("metal_type", "Unknown")
+        if mt not in summary:
+            summary[mt] = {"metal_type": mt, "total_weight_kg": 0, "item_count": 0, "avg_buy_price": 0}
+        summary[mt]["total_weight_kg"] += item.get("weight_kg", 0)
+        summary[mt]["item_count"] += 1
+    # Calculate averages and totals
+    total_weight = 0
+    for s in summary.values():
+        total_weight += s["total_weight_kg"]
+    return jsonify({
+        "by_metal": list(summary.values()),
+        "total_weight_kg": total_weight,
+        "total_items": len(items),
+    })
+
+
+# ===========================================================================
+# Stock Movements (in / out tracking)
+# ===========================================================================
+@app.route("/api/stock-movements", methods=["GET"], endpoint="list_stock_movements")
+@require_auth
+def list_stock_movements():
+    items = DATA.get("stock_movements", [])
+    date_q = request.args.get("date", "").strip()
+    if date_q:
+        items = [i for i in items if date_q in str(i.get("date", ""))]
+    mt = request.args.get("metal_type", "").strip()
+    if mt:
+        items = [i for i in items if mt.lower() in i.get("metal_type", "").lower()]
+    return jsonify(sorted(items, key=lambda x: x.get("id", 0), reverse=True))
+
+
+@app.route("/api/stock-movements", methods=["POST"], endpoint="create_stock_movement")
+@require_auth
+def create_stock_movement():
+    body = request.get_json(force=True)
+    fields = ["type", "metal_type", "weight_kg", "reference", "notes", "date", "supplier", "customer"]
+    data = {k: body[k] for k in fields if k in body}
+    data["id"] = _next_id("stock_movements")
+    data.setdefault("date", datetime.now().strftime("%Y-%m-%d"))
+    data["created_at"] = datetime.now().isoformat()
+    DATA.setdefault("stock_movements", []).append(data)
+    # Also update inventory: if type=in, add to inventory; if type=out, reduce
+    if data.get("type") == "in":
+        DATA.setdefault("inventory", []).append({
+            "id": _next_id("inventory"),
+            "metal_type": data.get("metal_type", "Unknown"),
+            "weight_kg": data.get("weight_kg", 0),
+            "location": data.get("location", "Main Yard"),
+            "notes": f"Stock in: {data.get('reference', '')}",
+            "created_at": datetime.now().isoformat(),
+        })
+    _save()
+    return jsonify(data), 201
+
+
+# ===========================================================================
+# Supplier Management
+# ===========================================================================
+_register_crud("suppliers", "suppliers",
+    ["name", "phone", "email", "address", "id_number", "notes"])
+
+
+# ===========================================================================
+# Profit & Loss Report
+# ===========================================================================
+@app.route("/api/reports/profit-loss", methods=["GET"], endpoint="profit_loss")
+@require_auth
+def profit_loss():
+    from_date = request.args.get("from", "1970-01-01")
+    to_date = request.args.get("to", "2099-12-31")
+
+    income = 0
+    expense = 0
+
+    # From transactions
+    for t in DATA.get("transactions", []):
+        d = t.get("date", "")
+        if from_date <= d <= to_date:
+            if t.get("type") == "income":
+                income += t.get("amount", 0)
+            else:
+                expense += t.get("amount", 0)
+
+    # From payments
+    for p in DATA.get("payments", []):
+        # Assume payments are income
+        income += p.get("amount", 0)
+
+    # From scrap purchases (expenses)
+    for s in DATA.get("scrap_purchases", []):
+        expense += s.get("total", 0)
+
+    net = income - expense
+
+    return jsonify({
+        "period": {"from": from_date, "to": to_date},
+        "income": {"total": income, "sources": {"transactions": income, "payments": 0}},
+        "expense": {"total": expense, "sources": {"transactions": expense, "purchases": 0}},
+        "net_profit": net,
+        "profit_margin_percent": round((net / income * 100), 1) if income > 0 else 0,
+    })
+
+
+# ===========================================================================
+# PDF Invoice Generation
+# ===========================================================================
+@app.route("/api/invoices/generate", methods=["POST"], endpoint="generate_invoice")
+@require_auth
+def generate_invoice():
+    body = request.get_json(force=True)
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.lib.units import mm
+    import io
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=20*mm, bottomMargin=20*mm)
+
+    styles = getSampleStyleSheet()
+    elements = []
+
+    # Company header
+    elements.append(Paragraph("<b>KIMATHI ENGINEERING</b>", styles["Title"]))
+    elements.append(Paragraph("Scrap Metal Dealers & General Engineering", styles["Normal"]))
+    elements.append(Paragraph(f"Nairobi, Kenya | Tel: +254 700 000 000", styles["Normal"]))
+    elements.append(Spacer(1, 20))
+
+    # Invoice title
+    invoice_no = body.get("invoice_number", f"INV-{datetime.now().strftime('%Y%m%d-%H%M%S')}")
+    elements.append(Paragraph(f"<b>INVOICE #{invoice_no}</b>", styles["Heading2"]))
+    elements.append(Paragraph(f"Date: {body.get('date', datetime.now().strftime('%Y-%m-%d'))}", styles["Normal"]))
+    elements.append(Paragraph(f"Customer: {body.get('customer_name', 'Walk-in Customer')}", styles["Normal"]))
+    elements.append(Spacer(1, 10))
+
+    # Items table
+    items = body.get("items", [])
+    table_data = [["#", "Description", "Qty", "Unit Price", "Total"]]
+    for i, item in enumerate(items, 1):
+        table_data.append([
+            str(i),
+            item.get("description", ""),
+            str(item.get("qty", 1)),
+            f"KES {item.get('unit_price', 0):,.2f}",
+            f"KES {item.get('total', 0):,.2f}",
+        ])
+    # Totals row
+    subtotal = body.get("subtotal", sum(item.get("total", 0) for item in items))
+    table_data.append(["", "", "", "Subtotal:", f"KES {subtotal:,.2f}"])
+    table_data.append(["", "", "", "Total:", f"KES {body.get('total', subtotal):,.2f}"])
+
+    col_widths = [30, 250, 60, 100, 100]
+    t = Table(table_data, colWidths=col_widths)
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1a237e")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTSIZE", (0, 0), (-1, -1), 10),
+        ("GRID", (0, 0), (-1, -3), 0.5, colors.grey),
+        ("LINEBELOW", (0, -2), (-1, -2), 1, colors.black),
+        ("LINEBELOW", (0, -1), (-1, -1), 2, colors.black),
+        ("ALIGN", (2, 0), (-1, -1), "RIGHT"),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+    ]))
+    elements.append(t)
+    elements.append(Spacer(1, 30))
+
+    # Payment info
+    elements.append(Paragraph("<b>Payment Details:</b>", styles["Heading3"]))
+    elements.append(Paragraph("M-Pesa Paybill: 247247 | Account: KIMATHI-INV", styles["Normal"]))
+    elements.append(Paragraph("Bank: Equity Bank | Acc: 1234567890", styles["Normal"]))
+    elements.append(Spacer(1, 20))
+    elements.append(Paragraph("<i>Thank you for your business!</i>", styles["Normal"]))
+
+    doc.build(elements)
+    pdf_bytes = buf.getvalue()
+    buf.close()
+
+    # Store invoice record
+    invoice_record = {
+        "id": _next_id("invoices"),
+        "invoice_number": invoice_no,
+        "customer_name": body.get("customer_name", ""),
+        "date": body.get("date", datetime.now().strftime("%Y-%m-%d")),
+        "total": body.get("total", subtotal),
+        "created_at": datetime.now().isoformat(),
+    }
+    DATA.setdefault("invoices", []).append(invoice_record)
+    _save()
+
+    from flask import send_file
+    import io as _io
+    return send_file(
+        _io.BytesIO(pdf_bytes),
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=f"invoice_{invoice_no}.pdf"
+    )
+
+
+# ===========================================================================
+# Weight Scale (mock — accepts readings from digital scale / manual entry)
+# ===========================================================================
+@app.route("/api/scale/reading", methods=["POST"], endpoint="scale_reading_post")
+@require_auth
+def scale_reading_post():
+    body = request.get_json(force=True)
+    reading = {
+        "id": _next_id("scale_readings"),
+        "weight_kg": body.get("weight_kg", 0),
+        "source": body.get("source", "manual"),  # "bluetooth", "manual"
+        "reference": body.get("reference", ""),
+        "timestamp": datetime.now().isoformat(),
+    }
+    DATA.setdefault("scale_readings", []).append(reading)
+    _save()
+    return jsonify(reading), 201
+
+
+@app.route("/api/scale/reading", methods=["GET"], endpoint="scale_reading_get")
+@require_auth
+def scale_reading_get():
+    readings = DATA.get("scale_readings", [])
+    latest = sorted(readings, key=lambda x: x.get("id", 0), reverse=True)
+    return jsonify(latest[:10] if latest else [{"weight_kg": 0, "message": "No readings yet"}])
 
 
 # ===========================================================================
