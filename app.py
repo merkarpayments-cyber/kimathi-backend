@@ -18,7 +18,7 @@ from flask_cors import CORS
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
-app = Flask(__name__)
+app = Flask(__name__, static_folder="static", static_url_path="/static")
 CORS(app)
 
 SECRET_KEY = "kimathi-engineering-secret-2026!!"  # 32 bytes — change in production
@@ -229,6 +229,23 @@ def get_dashboard():
         "recent_payments": sorted(DATA["payments"], key=lambda x: x.get("id", 0), reverse=True)[:5],
         "recent_transactions": sorted(DATA["transactions"], key=lambda x: x.get("id", 0), reverse=True)[:5],
     })
+
+
+# ===========================================================================
+# Static image serving (logo + landing page)
+# ===========================================================================
+@app.route("/api/images/<image_name>", methods=["GET"])
+def get_image(image_name):
+    """Serve static images by name (logo.png, landing.png)."""
+    import os as _os
+    safe_names = {"logo", "landing"}
+    if image_name not in safe_names:
+        return jsonify({"error": "Image not found"}), 404
+    file_path = _os.path.join(app.static_folder, f"{image_name}.png")
+    if not _os.path.exists(file_path):
+        return jsonify({"error": "Image file not uploaded yet"}), 404
+    from flask import send_file
+    return send_file(file_path, mimetype="image/png")
 
 
 # ===========================================================================
