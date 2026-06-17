@@ -167,6 +167,10 @@ def login():
     username = body.get("username", "").strip()
     password = body.get("password", "")
 
+    # Auto-seed if database is empty (handles gunicorn cold start)
+    if not DATA["users"]:
+        _seed()
+
     user = _find_user_by_username(username)
     if not user or not _check_password(password, user["password"]):
         return jsonify({"error": "Invalid username or password"}), 401
