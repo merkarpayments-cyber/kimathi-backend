@@ -52,6 +52,7 @@ TRANSACTION_CATEGORIES = {
         "Scrap Metal Sale",
         "Equipment Sale",
         "Service Fee",
+        "Labour",
         "Deposit",
         "Loan Repayment",
         "Other Income",
@@ -228,13 +229,23 @@ def create_user():
 def get_dashboard():
     total_customers = len(DATA["customers"])
     total_quotes = len(DATA["quotes"])
+
+    # Payments (income)
     total_payments = sum(p.get("amount", 0) for p in DATA["payments"])
+    # Scrap purchases (expenses)
     total_purchases = sum(s.get("total", 0) for s in DATA["scrap_purchases"])
+
+    # Transactions — general ledger
+    trans_income = sum(t.get("amount", 0) for t in DATA.get("transactions", []) if t.get("type") == "income")
+    trans_expense = sum(t.get("amount", 0) for t in DATA.get("transactions", []) if t.get("type") == "expense")
+
     return jsonify({
         "total_customers": total_customers,
         "total_quotes": total_quotes,
         "total_payments": total_payments,
         "total_purchases": total_purchases,
+        "total_income": total_payments + trans_income,
+        "total_expense": total_purchases + trans_expense,
         "recent_payments": sorted(DATA["payments"], key=lambda x: x.get("id", 0), reverse=True)[:5],
         "recent_transactions": sorted(DATA["transactions"], key=lambda x: x.get("id", 0), reverse=True)[:5],
     })
